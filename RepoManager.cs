@@ -13,6 +13,7 @@ namespace Rp1PrPicker
         // owner/name slugs for every non-archived repo in the org.
         public static List<string> ListOrgRepos(Action<string> log)
         {
+            if (!Runner.Exists("gh")) { log?.Invoke(Runner.GhMissingHelp); return new List<string>(); }
             log?.Invoke($"Listing repositories in {AppConfig.RepoOrg}…");
             var r = Runner.Gh($"repo list {AppConfig.RepoOrg} --no-archived --limit 500 --json nameWithOwner --jq \".[].nameWithOwner\"");
             if (!r.Ok)

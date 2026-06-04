@@ -34,16 +34,45 @@ namespace Rp1PrPicker
             };
             var outBuf = new StringBuilder();
             var errBuf = new StringBuilder();
-            using (var p = new Process { StartInfo = psi, EnableRaisingEvents = true })
+            try
             {
-                p.OutputDataReceived += (_, e) => { if (e.Data != null) { outBuf.AppendLine(e.Data); onLine?.Invoke(e.Data); } };
-                p.ErrorDataReceived  += (_, e) => { if (e.Data != null) { errBuf.AppendLine(e.Data); onLine?.Invoke(e.Data); } };
-                p.Start();
-                p.BeginOutputReadLine();
-                p.BeginErrorReadLine();
-                p.WaitForExit();
-                return new RunResult { ExitCode = p.ExitCode, Stdout = outBuf.ToString(), Stderr = errBuf.ToString() };
+                using (var p = new Process { StartInfo = psi, EnableRaisingEvents = true })
+                {
+                    p.OutputDataReceived += (_, e) => { if (e.Data != null) { outBuf.AppendLine(e.Data); onLine?.Invoke(e.Data); } };
+                    p.ErrorDataReceived  += (_, e) => { if (e.Data != null) { errBuf.AppendLine(e.Data); onLine?.Invoke(e.Data); } };
+                    p.Start();
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
+                    p.WaitForExit();
+                    return new RunResult { ExitCode = p.ExitCode, Stdout = outBuf.ToString(), Stderr = errBuf.ToString() };
+                }
             }
+            catch (Exception ex)
+            {
+                // Most commonly: the executable isn't installed / not on PATH.
+                var msg = $"Failed to run '{exe}': {ex.Message}";
+                onLine?.Invoke(msg);
+                return new RunResult { ExitCode = -1, Stdout = "", Stderr = msg };
+            }
+        }
+
+        public const string GhMissingHelp =
+            "GitHub CLI (gh) was not found on PATH. Install it (winget install --id GitHub.cli) " +
+            "and run 'gh auth login', then retry.";
+
+        // Whether an executable can be found on PATH (or as an absolute path).
+        public static bool Exists(string exe)
+        {
+            if (File.Exists(exe)) return true;
+            var pathDirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';');
+            var exts = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';');
+            foreach (var dir in pathDirs)
+            {
+                if (string.IsNullOrWhiteSpace(dir)) continue;
+                foreach (var ext in exts)
+                    try { if (File.Exists(Path.Combine(dir, exe + ext))) return true; } catch { }
+            }
+            return false;
         }
 
         public static RunResult Git(string args, Action<string> onLine = null)

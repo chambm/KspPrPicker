@@ -17,6 +17,7 @@ namespace Rp1PrPicker
         public static List<PrInfo> ListOpen(Action<string> log)
         {
             var prs = new List<PrInfo>();
+            if (!Runner.Exists("gh")) { log?.Invoke(Runner.GhMissingHelp); return prs; }
             foreach (var slug in AppConfig.SelectedRepos)
             {
                 log?.Invoke($"Fetching open PRs from {slug}…");
