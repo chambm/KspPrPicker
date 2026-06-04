@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Lists every file a PR touches and, per file, which other open PRs also touch it — i.e. where this
     // PR may collide on merge. Overlapping rows are tinted with the same red used in the main list.

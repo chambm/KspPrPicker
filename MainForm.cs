@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     internal sealed class MainForm : Form
     {
@@ -42,7 +42,7 @@ namespace Rp1PrPicker
 
         public MainForm()
         {
-            Text = $"RP-1 PR Picker — {AppConfig.RepoSlug}";
+            Text = $"KSP PR Picker — {AppConfig.RepoSlug}";
             Width = 1200;
             Height = 760;
             StartPosition = FormStartPosition.CenterScreen;

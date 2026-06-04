@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Wraps `gh pr list` to fetch open PRs and their file lists. We use jq inside gh to flatten
     // results to tab-separated lines so we don't need a JSON library on net48.

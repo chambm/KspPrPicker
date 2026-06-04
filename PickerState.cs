@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Remembers the PR set from the last Build && Deploy so the checkboxes come back pre-ticked.
     // Stored next to config.txt as one PR Uid ("owner/name#number") per line.
     internal static class PickerState
     {
-        static string FilePath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rp1-pr-picker", "last-prs.txt");
+        static string FilePath => Path.Combine(AppConfig.ConfigDir, "last-prs.txt");
 
         public static HashSet<string> LoadLastPrs()
         {

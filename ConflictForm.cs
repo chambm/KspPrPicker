@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     internal sealed class ConflictForm : Form
     {

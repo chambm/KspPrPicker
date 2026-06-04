@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     internal sealed class PrInfo
     {

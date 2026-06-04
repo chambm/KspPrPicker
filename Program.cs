@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     internal static class Program
     {

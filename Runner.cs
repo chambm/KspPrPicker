@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     internal sealed class RunResult
     {

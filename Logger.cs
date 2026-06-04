@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Mirrors everything that goes to the on-screen log into a plain-text file next to the exe
     // (picker.log). Used both for after-the-fact debugging and so tooling can tail the run output,

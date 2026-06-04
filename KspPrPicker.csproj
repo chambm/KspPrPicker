@@ -5,8 +5,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <RootNamespace>Rp1PrPicker</RootNamespace>
-    <AssemblyName>rp1-pr-picker</AssemblyName>
+    <RootNamespace>KspPrPicker</RootNamespace>
+    <AssemblyName>KspPrPicker</AssemblyName>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
   <!-- If the Repos folder is placed inside the picker's source tree, don't let the SDK glob pull the

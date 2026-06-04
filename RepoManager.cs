@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Lists repositories in the org, clones the picked ones into ReposFolder, and checks each repo's
     // GameData layout so we know whether a simple per-mod backup is possible.

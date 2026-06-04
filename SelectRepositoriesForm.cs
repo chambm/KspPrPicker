@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Checklist of the org's repositories plus any custom github repos added by URL. The checked ones are
     // the repos whose PRs we list. Custom (non-org) repos can be removed; org repos cannot.

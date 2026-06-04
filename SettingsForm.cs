@@ -3,7 +3,7 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Edits the two machine-specific executable paths and persists them to config.txt via AppConfig.Save().
     internal sealed class SettingsForm : Form

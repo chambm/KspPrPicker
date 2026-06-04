@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // The merge/build/deploy pipeline. Run() groups the selected PRs by repository and processes each
     // repo: reset its picker branch, merge its PRs, build its C# projects, and deploy each GameData mod
@@ -76,7 +76,7 @@ namespace Rp1PrPicker
                 if (Plan)
                 {
                     Note("# ============================================================");
-                    Note("# RP-1 PR Picker — planned commands ('Trust the clanker' is OFF)");
+                    Note("# KSP PR Picker — planned commands ('Trust the clanker' is OFF)");
                     Note("# Nothing has been executed. Review, then run these yourself.");
                     Note("# ============================================================");
                 }

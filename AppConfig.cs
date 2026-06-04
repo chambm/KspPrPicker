@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Rp1PrPicker
+namespace KspPrPicker
 {
     // Defaults are tuned for the maintainer's machine; override in %APPDATA%\rp1-pr-picker\config.txt
     // with KEY=VALUE lines. Missing keys fall through to the constant.
@@ -27,9 +27,12 @@ namespace Rp1PrPicker
         // When false, Build && Deploy / Restore only print the commands instead of running them.
         public static bool TrustClanker = true;
 
+        // %APPDATA%\KspPrPicker — holds config.txt and last-prs.txt.
+        public static string ConfigDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KspPrPicker");
+
         public static void Load()
         {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rp1-pr-picker", "config.txt");
+            var path = Path.Combine(ConfigDir, "config.txt");
             if (!File.Exists(path)) return;
             foreach (var line in File.ReadAllLines(path))
             {
@@ -61,9 +64,8 @@ namespace Rp1PrPicker
 
         public static void Save()
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rp1-pr-picker");
-            Directory.CreateDirectory(dir);
-            File.WriteAllLines(Path.Combine(dir, "config.txt"), new[]
+            Directory.CreateDirectory(ConfigDir);
+            File.WriteAllLines(Path.Combine(ConfigDir, "config.txt"), new[]
             {
                 $"RepoSlug={RepoSlug}",
                 $"RepoOrg={RepoOrg}",
