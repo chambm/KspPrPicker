@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+
+# Picker-managed working data (clones + aggregated reference assemblies — can be many GB)
+repos/
+.shared-refs/
+
+# Runtime artifacts
+*.log
+picker-plan.ps1
+
+# Visual Studio / Rider / user files
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs

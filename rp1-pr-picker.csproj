@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Rp1PrPicker</RootNamespace>
+    <AssemblyName>rp1-pr-picker</AssemblyName>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <!-- If the Repos folder is placed inside the picker's source tree, don't let the SDK glob pull the
+       cloned repositories' source files into this build. -->
+  <ItemGroup>
+    <Compile Remove="repos\**" />
+    <EmbeddedResource Remove="repos\**" />
+    <None Remove="repos\**" />
+    <Compile Remove=".shared-refs\**" />
+  </ItemGroup>
+</Project>
