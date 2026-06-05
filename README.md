@@ -2,6 +2,9 @@
 
 A Windows tool for testing in-progress pull requests from [KSP-RO](https://github.com/KSP-RO) (and other GitHub) repositories in a local Kerbal Space Program install.
 
+<img width="1484" height="1189" alt="Screenshot 2026-06-05 183719" src="https://github.com/user-attachments/assets/79b0b9f3-fc8d-4b29-987e-6620e914dc41" />
+<img width="546" height="593" alt="Screenshot 2026-06-05 183738" src="https://github.com/user-attachments/assets/ea9782d7-db97-45fe-bf3b-9e5c0344e27e" />
+
 It lists open PRs across selected repositories, lets you pick a set, then for each repo merges the chosen PRs onto `master`, builds the mod from source, and deploys it into your KSP `GameData` — with a one-time pristine backup so you can restore the stock state afterwards.
 
 ## What it does
