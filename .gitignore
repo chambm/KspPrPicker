@@ -9,6 +9,7 @@ repos/
 # Runtime artifacts
 *.log
 picker-plan.ps1
+*.lnk
 
 # Visual Studio / Rider / user files
 .vs/

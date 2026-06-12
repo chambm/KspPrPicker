@@ -20,7 +20,7 @@ namespace KspPrPicker
         public sealed class ConflictDecision
         {
             public ConflictChoice Choice;
-            public List<int> PrsToDrop = new List<int>();   // only used when Choice == DropEarlier
+            public List<string> PrsToDrop = new List<string>();   // Uids; only used when Choice == DropEarlier
         }
 
         public sealed class ConflictContext
@@ -73,6 +73,8 @@ namespace KspPrPicker
                 var groups = selected.GroupBy(p => p.RepoSlug)
                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToList();
 
+                if (!CheckNoModDirCollisions(groups.Select(g => g.Key))) return false;
+
                 if (Plan)
                 {
                     Note("# ============================================================");
@@ -93,6 +95,42 @@ namespace KspPrPicker
                 L("\nFATAL: " + ex);
                 return false;
             }
+        }
+
+        // Two different repos that ship the same GameData/<Mod> folder would overwrite each other on deploy
+        // (e.g. an upstream Kerbalism PR and a chambm/Kerbalism branch, both touching GameData/Kerbalism).
+        // Refuse the whole run up front rather than silently let the last one win.
+        bool CheckNoModDirCollisions(IEnumerable<string> slugList)
+        {
+            var slugs = slugList.ToList();
+
+            // Fast: two repos sharing a short name are the same project (an upstream + a fork) and ship the
+            // same GameData — catch this without needing a (possibly large) clone first.
+            foreach (var grp in slugs.GroupBy(AppConfig.RepoNameOf, StringComparer.OrdinalIgnoreCase))
+                if (grp.Count() > 1)
+                {
+                    L($"\nFATAL: {string.Join(" and ", grp)} are the same project ('{grp.Key}') and deploy the same GameData folder(s).");
+                    L($"  They would overwrite each other — select only one of them and re-run.");
+                    return false;
+                }
+
+            // Accurate: among already-cloned repos, look for any shared GameData mod folder.
+            var owner = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // mod dir -> slug
+            foreach (var slug in slugs)
+            {
+                if (!RepoManager.IsCloned(slug)) continue;
+                foreach (var mod in RepoManager.GameDataModDirs(AppConfig.RepoPath(slug)))
+                {
+                    if (owner.TryGetValue(mod, out var other) && !string.Equals(other, slug, StringComparison.OrdinalIgnoreCase))
+                    {
+                        L($"\nFATAL: {AppConfig.RepoDisplayName(slug)} and {AppConfig.RepoDisplayName(other)} both deploy GameData/{mod}.");
+                        L($"  They would overwrite each other — select only one of them and re-run.");
+                        return false;
+                    }
+                    owner[mod] = slug;
+                }
+            }
+            return true;
         }
 
         bool ProcessRepo(string slug, List<PrInfo> prs)
@@ -117,21 +155,21 @@ namespace KspPrPicker
             var merged = new List<PrInfo>();
             var skipped = new HashSet<string>();
             var dropped = new HashSet<string>();
-            var queue = prs.OrderBy(p => p.Number).ToList();
+            var queue = prs.OrderBy(p => p.IsBranch).ThenBy(p => p.Number).ThenBy(p => p.HeadRef).ToList();
             int i = 0;
 
-            Note("# --- merge PRs (resolve conflicts yourself) ---");
+            Note("# --- merge PRs/branches (resolve conflicts yourself) ---");
             while (i < queue.Count)
             {
                 var pr = queue[i];
                 if (skipped.Contains(pr.Uid) || dropped.Contains(pr.Uid)) { i++; continue; }
 
-                L($"\n=== Merging PR #{pr.Number} ({pr.HeadRef}) — {pr.Title} ===");
-                if (Plan && pr.ConflictsWithMaster) Note($"# NOTE: GitHub reports PR #{pr.Number} CONFLICTING with {AppConfig.BaseBranch}");
+                L($"\n=== Merging {pr.Label} ({pr.HeadRef}) — {pr.Title} ===");
+                if (Plan && pr.ConflictsWithMaster) Note($"# NOTE: GitHub reports {pr.Label} CONFLICTING with {AppConfig.BaseBranch}");
 
                 if (!FetchPrRef(pr) && !Plan)
                 {
-                    L($"  Failed to fetch PR #{pr.Number}; skipping.");
+                    L($"  Failed to fetch {pr.Label}; skipping.");
                     skipped.Add(pr.Uid); Skipped.Add(pr); i++;
                     continue;
                 }
@@ -143,7 +181,7 @@ namespace KspPrPicker
 
                 if (TryAutoCompleteWithRerere())
                 {
-                    L($"  Auto-resolved PR #{pr.Number} from a remembered resolution (git rerere).");
+                    L($"  Auto-resolved {pr.Label} from a remembered resolution (git rerere).");
                     merged.Add(pr); i++;
                     continue;
                 }
@@ -161,19 +199,19 @@ namespace KspPrPicker
                 if (decision.Choice == ConflictChoice.ResolveManually)
                 {
                     if (ResolveWithMergeTool(pr)) merged.Add(pr);
-                    else { L($"  Conflicts left unresolved — skipping PR #{pr.Number}."); Git("merge --abort", L); skipped.Add(pr.Uid); Skipped.Add(pr); }
+                    else { L($"  Conflicts left unresolved — skipping {pr.Label}."); Git("merge --abort", L); skipped.Add(pr.Uid); Skipped.Add(pr); }
                     i++;
                 }
                 else if (decision.Choice == ConflictChoice.Skip)
                 {
-                    L($"  User chose: skip PR #{pr.Number}.");
+                    L($"  User chose: skip {pr.Label}.");
                     Git("merge --abort", L); skipped.Add(pr.Uid); Skipped.Add(pr); i++;
                 }
                 else
                 {
                     Git("merge --abort", L);
-                    L($"  User chose: drop earlier PR(s) {string.Join(", ", decision.PrsToDrop)} and retry.");
-                    var drop = merged.Where(m => decision.PrsToDrop.Contains(m.Number)).ToList();
+                    L($"  User chose: drop earlier item(s) {string.Join(", ", decision.PrsToDrop)} and retry.");
+                    var drop = merged.Where(m => decision.PrsToDrop.Contains(m.Uid)).ToList();
                     foreach (var d in drop) { dropped.Add(d.Uid); DroppedDueToConflict.Add(d); }
                     merged = merged.Where(m => !dropped.Contains(m.Uid)).ToList();
 
@@ -182,11 +220,11 @@ namespace KspPrPicker
                     merged.Clear();
                     foreach (var s in survivors)
                     {
-                        L($"  Replaying PR #{s.Number}");
+                        L($"  Replaying {s.Label}");
                         FetchPrRef(s);
                         if (!MergePr(s).Ok)
                         {
-                            L($"  ERROR: replay of PR #{s.Number} unexpectedly conflicted. Aborting {name}.");
+                            L($"  ERROR: replay of {s.Label} unexpectedly conflicted. Aborting {name}.");
                             Git("merge --abort", L);
                             return false;
                         }
@@ -200,13 +238,14 @@ namespace KspPrPicker
 
             // In plan mode we don't know what will merge, so plan for the whole selected set.
             var workItems = Plan ? (IEnumerable<PrInfo>)prs : merged;
-            if (!workItems.Any()) { L($"\nNo PRs merged for {name} — nothing to build/deploy."); return true; }
+            if (!workItems.Any()) { L($"\nNothing merged for {name} — nothing to build/deploy."); return true; }
 
-            if (workItems.Any(p => p.TouchesCs))
+            // Build when any merged item touches .cs. Branches have no fetched file list, so build to be safe.
+            if (workItems.Any(p => p.TouchesCs || p.IsBranch))
             {
                 if (!BuildRepo()) return false;
             }
-            else { L($"\nNo .cs changes in {name}'s merged set — skipping build; deploying GameData as-is."); Note("# (no selected PR touches .cs — no build)"); }
+            else { L($"\nNo .cs changes in {name}'s merged set — skipping build; deploying GameData as-is."); Note("# (no selected item touches .cs — no build)"); }
 
             return DeployRepo();
         }
@@ -244,12 +283,12 @@ namespace KspPrPicker
             Git($"reset --hard origin/{AppConfig.BaseBranch}", L);
         }
 
-        bool FetchPrRef(PrInfo pr) => Git($"fetch origin pull/{pr.Number}/head:pr-{pr.Number} --force", L).Ok;
+        bool FetchPrRef(PrInfo pr) => Git($"fetch origin {pr.FetchSpec} --force", L).Ok;
 
         RunResult MergePr(PrInfo pr)
         {
-            var msg = $"picker: merge PR #{pr.Number} - {pr.Title}".Replace("\"", "'");
-            return Git($"merge --no-ff --no-edit -m \"{msg}\" pr-{pr.Number}", L);
+            var msg = $"picker: merge {pr.Label} - {pr.Title}".Replace("\"", "'");
+            return Git($"merge --no-ff --no-edit -m \"{msg}\" {pr.LocalRef}", L);
         }
 
         List<string> GetConflictingFiles()
@@ -310,7 +349,7 @@ namespace KspPrPicker
                 if (e.Code == "UD" || e.Code == "DU")
                 {
                     bool keep = AskYesNo?.Invoke("Modify/delete conflict",
-                        $"{e.Path}\n\nThis file was modified on one side and deleted by PR #{pr.Number} on the other.\n\n" +
+                        $"{e.Path}\n\nThis file was modified on one side and deleted by {pr.Label} on the other.\n\n" +
                         "Yes = keep the modified file\nNo = accept the deletion") ?? false;
                     Git(keep ? $"add -- \"{e.Path}\"" : $"rm -- \"{e.Path}\"", L);
                     L($"  {e.Path}: {(keep ? "kept modified version" : "accepted deletion")}.");
@@ -328,13 +367,13 @@ namespace KspPrPicker
             if (UnmergedEntries().Count > 0)
             {
                 var tool = string.IsNullOrWhiteSpace(AppConfig.MergeTool) ? "" : $" --tool={AppConfig.MergeTool}";
-                L($"  Launching merge tool for PR #{pr.Number} — resolve, save, and close each file…");
+                L($"  Launching merge tool for {pr.Label} — resolve, save, and close each file…");
                 Git($"-c mergetool.keepBackup=false -c mergetool.writeToTemp=true -c mergetool.trustExitCode=true mergetool -y{tool}", L);
             }
 
             if (UnmergedEntries().Count > 0) { L("  Some files are still unresolved after the merge tool closed."); return false; }
             if (!Git("commit --no-edit", L).Ok) { L("  Commit after resolution failed."); return false; }
-            L($"  Resolved and committed PR #{pr.Number}. Content resolutions are remembered (git rerere) for future runs.");
+            L($"  Resolved and committed {pr.Label}. Content resolutions are remembered (git rerere) for future runs.");
             return true;
         }
 
@@ -521,6 +560,12 @@ namespace KspPrPicker
 
             foreach (var mod in mods)
             {
+                if (ShouldSkipModOverlay(mod, out var skipReason))
+                {
+                    L($"  {mod}: skipping overlay -- {skipReason}");
+                    Note($"# {mod}: skipping overlay -- {skipReason}");
+                    continue;
+                }
                 var repoMod = Path.Combine(repoGameData, mod);
                 var liveMod = Path.Combine(AppConfig.KspGameDataDir, mod);
                 var backupMod = Path.Combine(AppConfig.BackupRootDir, mod);
@@ -543,6 +588,40 @@ namespace KspPrPicker
             }
             if (!Plan) L($"Deployed {mods.Count} mod folder(s).");
             return true;
+        }
+
+        // Generic CKAN-aware overlay gate: if GameData/<mod>/ is owned by a CKAN-installed module, and
+        // the user's saved preference for any abstract slot that module fills names *this* installed
+        // module (i.e. "I want to keep this provider"), skip the overlay.
+        //
+        // No preference + no CKAN ownership -> overlay as before.
+        // No preference + CKAN owns it       -> overlay as before (safe: behavior unchanged for users
+        //                                       who never opened the Settings -> CKAN section).
+        // Preference names this module       -> skip; the user picked it as canonical.
+        // Preference names a different module -> overlay (the user has explicitly chosen a different
+        //                                       provider; building the repo that ships it is presumably
+        //                                       why they're running the picker).
+        bool ShouldSkipModOverlay(string mod, out string reason)
+        {
+            reason = null;
+            string owner = null;
+            try { owner = CkanRegistry.GetOwnerOfGameDataDir(mod); } catch { /* CKAN data missing -> overlay as before */ }
+            if (owner == null) return false;
+
+            List<string> slots;
+            try { slots = CkanRegistry.GetSlotsOfInstalledModule(owner); } catch { slots = new List<string> { owner }; }
+
+            foreach (var slot in slots)
+            {
+                if (!AppConfig.CkanProviderPrefs.TryGetValue(slot, out var prefIdent)) continue;
+                if (!string.Equals(prefIdent, owner, StringComparison.Ordinal)) continue;
+                CkanRegistry.Installed installed = null;
+                try { installed = CkanRegistry.GetInstalledProvider(slot); } catch { }
+                var ver = installed?.Version ?? "(installed)";
+                reason = $"keeping CKAN-installed {owner} {ver} (Settings -> CKAN provider preferences, slot \"{slot}\")";
+                return true;
+            }
+            return false;
         }
 
         void WritePlanFile()

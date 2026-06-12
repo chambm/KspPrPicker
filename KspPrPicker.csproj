@@ -17,4 +17,8 @@
     <None Remove="repos\**" />
     <Compile Remove=".shared-refs\**" />
   </ItemGroup>
+  <!-- JavaScriptSerializer (CkanRegistry parses CKAN's 30+ MB repo cache JSON). Framework reference, no NuGet. -->
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
 </Project>

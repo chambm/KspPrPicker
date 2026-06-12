@@ -17,6 +17,14 @@ namespace KspPrPicker
         readonly BindingSource _bindingSource = new BindingSource();
         readonly DataTable _table = new DataTable("prs");
         readonly TextBox _log = new TextBox();
+        readonly TextBox _description = new TextBox();
+        readonly SplitContainer _split = new SplitContainer();
+        readonly TabControl _bottomTabs = new TabControl();
+        readonly TabPage _outputTab = new TabPage("Output");
+        readonly TabPage _descriptionTab = new TabPage("Description");
+        // The PR whose body is currently being fetched (by Uid). Used to drop stale background results
+        // when the user moves on before the fetch returns.
+        string _descLoadingUid;
         readonly Button _refresh = new Button();
         readonly Button _selectRepos = new Button();
         readonly Button _build = new Button();
@@ -87,14 +95,22 @@ namespace KspPrPicker
             _status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             BuildGrid();
+            BuildBottomTabs();
 
-            _log.Top = 380; _log.Left = 10; _log.Width = ClientSize.Width - 20; _log.Height = 320;
-            _log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            _log.Multiline = true;
-            _log.ReadOnly = true;
-            _log.ScrollBars = ScrollBars.Vertical;
-            _log.Font = new Font(FontFamily.GenericMonospace, 9);
-            _log.BackColor = Color.White;
+            // Split panel holds the grid above and the Output/Description tabs below, separated by a
+            // draggable splitter so the user can resize either pane. The grid+log were previously
+            // anchored at fixed offsets; now they each fill their own SplitContainer panel.
+            _split.Orientation = Orientation.Horizontal;
+            _split.Top = 50; _split.Left = 10;
+            _split.Width = ClientSize.Width - 20; _split.Height = ClientSize.Height - 60;
+            _split.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            _split.SplitterDistance = 320;     // grid height; user can drag from here
+            _split.Panel1MinSize = 120;
+            _split.Panel2MinSize = 120;
+            _grid.Dock = DockStyle.Fill;
+            _bottomTabs.Dock = DockStyle.Fill;
+            _split.Panel1.Controls.Add(_grid);
+            _split.Panel2.Controls.Add(_bottomTabs);
 
             Controls.Add(_refresh);
             Controls.Add(_selectRepos);
@@ -105,10 +121,68 @@ namespace KspPrPicker
             Controls.Add(_launchAfter);
             Controls.Add(_trustClanker);
             Controls.Add(_status);
-            Controls.Add(_grid);
-            Controls.Add(_log);
+            Controls.Add(_split);
 
             Shown += async (s, e) => await RefreshAsync();
+        }
+
+        void BuildBottomTabs()
+        {
+            _log.Dock = DockStyle.Fill;
+            _log.Multiline = true;
+            _log.ReadOnly = true;
+            _log.ScrollBars = ScrollBars.Vertical;
+            _log.Font = new Font(FontFamily.GenericMonospace, 9);
+            _log.BackColor = Color.White;
+            _outputTab.Controls.Add(_log);
+
+            _description.Dock = DockStyle.Fill;
+            _description.Multiline = true;
+            _description.ReadOnly = true;
+            _description.ScrollBars = ScrollBars.Vertical;
+            _description.WordWrap = true;
+            _description.Font = new Font(FontFamily.GenericSansSerif, 9);
+            _description.BackColor = Color.White;
+            _description.Text = "(select a PR)";
+            _descriptionTab.Controls.Add(_description);
+
+            _bottomTabs.TabPages.Add(_outputTab);
+            _bottomTabs.TabPages.Add(_descriptionTab);
+            _bottomTabs.SelectedIndexChanged += (s, e) => { if (_bottomTabs.SelectedTab == _descriptionTab) RefreshDescriptionForCurrentRow(); };
+
+            // Re-fetch when the user clicks a new row (only if the Description tab is what they're looking at).
+            _grid.SelectionChanged += (s, e) => { if (_bottomTabs.SelectedTab == _descriptionTab) RefreshDescriptionForCurrentRow(); };
+        }
+
+        PrInfo CurrentSelectedPr()
+        {
+            if (_grid.CurrentRow == null || _grid.CurrentRow.IsNewRow) return null;
+            var uid = _grid.CurrentRow.Cells["Uid"].Value as string;
+            return uid != null && _prById.TryGetValue(uid, out var pr) ? pr : null;
+        }
+
+        void RefreshDescriptionForCurrentRow()
+        {
+            var pr = CurrentSelectedPr();
+            if (pr == null) { _description.Text = "(select a PR)"; _descLoadingUid = null; return; }
+            if (pr.Body != null) { _description.Text = pr.Body.Length == 0 ? "(empty description)" : pr.Body; _descLoadingUid = null; return; }
+
+            // Mark this Uid as the in-flight fetch. The result is dropped if the user moves to a
+            // different row (or away from the Description tab) before the gh call returns.
+            _descLoadingUid = pr.Uid;
+            _description.Text = $"Loading description for #{pr.Number}…";
+            var slug = pr.RepoSlug;
+            var number = pr.Number;
+            var uid = pr.Uid;
+            Task.Run(() => PrFetcher.FetchBody(slug, number)).ContinueWith(t =>
+            {
+                if (_descLoadingUid != uid) return;       // user moved on
+                var body = t.IsFaulted ? null : t.Result;
+                if (_prById.TryGetValue(uid, out var p)) p.Body = body ?? "";
+                if (_bottomTabs.SelectedTab == _descriptionTab && CurrentSelectedPr()?.Uid == uid)
+                    _description.Text = string.IsNullOrEmpty(body) ? "(empty or unavailable)" : body;
+                _descLoadingUid = null;
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         void BuildGrid()
@@ -123,8 +197,7 @@ namespace KspPrPicker
             _table.Columns.Add("CS", typeof(bool));
             _bindingSource.DataSource = _table;
 
-            _grid.Top = 50; _grid.Left = 10; _grid.Width = ClientSize.Width - 20; _grid.Height = 320;
-            _grid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            // Position/size set by SplitContainer's Panel1 (Dock = Fill) -- no Anchor needed.
             _grid.AutoGenerateColumns = false;
             _grid.AllowUserToAddRows = false;
             _grid.AllowUserToDeleteRows = false;
@@ -345,7 +418,9 @@ namespace KspPrPicker
                 foreach (var pr in prs)
                 {
                     _prById[pr.Uid] = pr;
-                    _table.Rows.Add(remembered.Contains(pr.Uid), pr.Uid, pr.Repo, pr.Number, pr.Author, pr.Title, pr.FilesSummary, pr.TouchesCs);
+                    // Branches have no PR number — leave that cell blank.
+                    object number = pr.IsBranch ? (object)DBNull.Value : pr.Number;
+                    _table.Rows.Add(remembered.Contains(pr.Uid), pr.Uid, pr.Repo, number, pr.Author, pr.Title, pr.FilesSummary, pr.TouchesCs);
                 }
                 BuildConflictGraph();
                 _suppressRecolor = false;
@@ -453,10 +528,11 @@ namespace KspPrPicker
             try { orgRepos = await Task.Run(() => RepoManager.ListOrgRepos(Log)); }
             finally { SetButtonsEnabled(true); }
 
-            using (var dlg = new SelectRepositoriesForm(orgRepos, AppConfig.SelectedRepos))
+            using (var dlg = new SelectRepositoriesForm(orgRepos, AppConfig.SelectedRepos, AppConfig.BranchRepos))
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK) { SetStatus("Repository selection cancelled."); return; }
                 AppConfig.SelectedRepos = dlg.SelectedSlugs;
+                AppConfig.BranchRepos = dlg.BranchSlugs;
                 AppConfig.Save();
             }
 

@@ -18,6 +18,8 @@ namespace KspPrPicker
         {
             var prs = new List<PrInfo>();
             if (!Runner.Exists("gh")) { log?.Invoke(Runner.GhMissingHelp); return prs; }
+            // repoSlug -> open PR head-ref names, so branch listing can skip branches that already have a PR.
+            var prHeadRefs = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var slug in AppConfig.SelectedRepos)
             {
                 log?.Invoke($"Fetching open PRs from {slug}…");
@@ -34,7 +36,8 @@ namespace KspPrPicker
                     log?.Invoke(r.Stderr);
                     continue;
                 }
-                var repoName = AppConfig.RepoNameOf(slug);
+                var repoName = AppConfig.RepoDisplayName(slug);
+                var heads = prHeadRefs[slug] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 int count = 0;
                 foreach (var line in r.Stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
                 {
@@ -42,6 +45,7 @@ namespace KspPrPicker
                     if (parts.Length < 6) continue;
                     int num;
                     if (!int.TryParse(parts[0], out num)) continue;
+                    heads.Add(parts[2]);
                     prs.Add(new PrInfo
                     {
                         Number = num,
@@ -59,8 +63,40 @@ namespace KspPrPicker
                 }
                 log?.Invoke($"  {repoName}: {count} open PR(s).");
             }
-            log?.Invoke($"Found {prs.Count} open PR(s) across {AppConfig.SelectedRepos.Count} repo(s).");
-            return prs.OrderBy(p => p.Repo).ThenBy(p => p.Number).ToList();
+
+            foreach (var slug in AppConfig.BranchRepos)
+            {
+                log?.Invoke($"Listing branches from {slug}…");
+                var r = Runner.Gh($"api repos/{slug}/branches --paginate --jq \".[].name\"");
+                if (!r.Ok) { log?.Invoke($"`gh api branches` failed for {slug}:"); log?.Invoke(r.Stderr); continue; }
+                var repoName = AppConfig.RepoDisplayName(slug);
+                prHeadRefs.TryGetValue(slug, out var heads);
+                int count = 0;
+                foreach (var name in r.Stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()))
+                {
+                    if (name.Length == 0) continue;
+                    if (name == AppConfig.BaseBranch || name == "master" || name == "main") continue;
+                    if (heads != null && heads.Contains(name)) continue;   // already shown as a PR
+                    prs.Add(new PrInfo { IsBranch = true, HeadRef = name, Title = name, Author = "", Repo = repoName, RepoSlug = slug });
+                    count++;
+                }
+                log?.Invoke($"  {repoName}: {count} branch(es).");
+            }
+
+            log?.Invoke($"Found {prs.Count} item(s) across {AppConfig.SelectedRepos.Union(AppConfig.BranchRepos).Distinct().Count()} repo(s).");
+            return prs.OrderBy(p => p.Repo).ThenBy(p => p.IsBranch).ThenBy(p => p.Number).ThenBy(p => p.HeadRef).ToList();
+        }
+
+        // Fetches just the PR body for the given repo + number. Called on demand from the Description
+        // tab to avoid the bandwidth + latency of pulling every body in ListOpen. Returns the body
+        // text, or null if `gh` couldn't return it.
+        public static string FetchBody(string slug, int number)
+        {
+            if (!Runner.Exists("gh")) return null;
+            var r = Runner.Gh($"pr view {number} --repo {slug} --json body --jq .body");
+            if (!r.Ok) return null;
+            var body = r.Stdout?.TrimEnd('\r', '\n');
+            return body;
         }
     }
 }

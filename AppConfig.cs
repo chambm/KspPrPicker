@@ -15,6 +15,8 @@ namespace KspPrPicker
         public static string ReposFolder = @"C:\Users\Matt\Downloads\ksp-claude";
         // Repos whose PRs we list, as owner/name slugs. Remembered across launches.
         public static List<string> SelectedRepos = new List<string> { "KSP-RO/RP-1" };
+        // Repos for which the main list also includes branches (not just PRs).
+        public static List<string> BranchRepos = new List<string>();
         public static string KspGameDataRp1Plugins = @"C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\GameData\RP-1\Plugins";
         public static string KspExe = @"C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64.exe";
         public static string MsBuildExe = @"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe";
@@ -26,6 +28,17 @@ namespace KspPrPicker
         public static string MergeTool = "";
         // When false, Build && Deploy / Restore only print the commands instead of running them.
         public static bool TrustClanker = true;
+
+        // Per-CKAN-abstract-slot preference: which provider identifier the user considers canonical for
+        // each "provides" slot. When the chosen provider matches what's installed in <KSP>/CKAN/registry.json,
+        // the picker skips overlaying that provider's GameData dir(s) from any built repo -- so e.g.
+        // building Kerbalism upstream doesn't clobber Kerbalism-Config-RO that CKAN installed. Versions
+        // are informational unless we grow auto-download support. Persisted as
+        //   CkanProvider.<slot>=<identifier>
+        //   CkanVersion.<slot>=<version>
+        // lines in config.txt.
+        public static Dictionary<string, string> CkanProviderPrefs = new Dictionary<string, string>();
+        public static Dictionary<string, string> CkanVersionPrefs = new Dictionary<string, string>();
 
         // %APPDATA%\KspPrPicker — holds config.txt and last-prs.txt.
         public static string ConfigDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KspPrPicker");
@@ -48,6 +61,7 @@ namespace KspPrPicker
                     case "RepoOrg":                RepoOrg = v; break;
                     case "ReposFolder":            ReposFolder = v; break;
                     case "SelectedRepos":          SelectedRepos = v.Split(';').Select(s => s.Trim()).Where(s => s.Length > 0).ToList(); break;
+                    case "BranchRepos":            BranchRepos = v.Split(';').Select(s => s.Trim()).Where(s => s.Length > 0).ToList(); break;
                     case "LocalRepoPath":          ReposFolder = Path.GetDirectoryName(v) ?? ReposFolder; break;  // migrate old key
                     case "KspGameDataRp1Plugins":  KspGameDataRp1Plugins = v; break;
                     case "KspExe":                 KspExe = v; break;
@@ -58,6 +72,10 @@ namespace KspPrPicker
                     case "BaseBranch":             BaseBranch = v; break;
                     case "MergeTool":              MergeTool = v; break;
                     case "TrustClanker":           bool.TryParse(v, out TrustClanker); break;
+                    default:
+                        if (k.StartsWith("CkanProvider.")) CkanProviderPrefs[k.Substring("CkanProvider.".Length)] = v;
+                        else if (k.StartsWith("CkanVersion.")) CkanVersionPrefs[k.Substring("CkanVersion.".Length)] = v;
+                        break;
                 }
             }
         }
@@ -71,6 +89,7 @@ namespace KspPrPicker
                 $"RepoOrg={RepoOrg}",
                 $"ReposFolder={ReposFolder}",
                 $"SelectedRepos={string.Join(";", SelectedRepos)}",
+                $"BranchRepos={string.Join(";", BranchRepos)}",
                 $"KspGameDataRp1Plugins={KspGameDataRp1Plugins}",
                 $"KspExe={KspExe}",
                 $"MsBuildExe={MsBuildExe}",
@@ -80,13 +99,35 @@ namespace KspPrPicker
                 $"BaseBranch={BaseBranch}",
                 $"MergeTool={MergeTool}",
                 $"TrustClanker={TrustClanker}",
-            });
+            }.Concat(CkanProviderPrefs.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                                       .Select(p => $"CkanProvider.{p.Key}={p.Value}"))
+             .Concat(CkanVersionPrefs.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                                      .Select(p => $"CkanVersion.{p.Key}={p.Value}"))
+             .ToArray());
         }
 
         // Short repo name from an owner/name slug, e.g. "KSP-RO/RP-1" -> "RP-1".
         public static string RepoNameOf(string slug) => slug.Contains("/") ? slug.Substring(slug.LastIndexOf('/') + 1) : slug;
-        // Local clone path for a repo slug (or short name).
-        public static string RepoPath(string slug) => Path.Combine(ReposFolder, RepoNameOf(slug));
+        public static string OwnerOf(string slug) => slug.Contains("/") ? slug.Substring(0, slug.IndexOf('/')) : "";
+
+        // Local clone path for a repo slug. Uses the short name (repos/<name>) unless more than one
+        // configured repo shares that name (e.g. an upstream + a fork), in which case it's disambiguated
+        // by owner (repos/<owner>__<name>) so forks don't collide on the same folder.
+        public static string RepoPath(string slug)
+        {
+            return Path.Combine(ReposFolder, NameIsAmbiguous(slug) ? $"{OwnerOf(slug)}__{RepoNameOf(slug)}" : RepoNameOf(slug));
+        }
+
+        // True when more than one configured repo shares this slug's short name (e.g. an upstream + a fork).
+        public static bool NameIsAmbiguous(string slug)
+        {
+            var name = RepoNameOf(slug);
+            return SelectedRepos.Concat(BranchRepos)
+                .Count(s => string.Equals(RepoNameOf(s), name, StringComparison.OrdinalIgnoreCase)) > 1;
+        }
+
+        // What to show in the Repo column: short name, or "owner/name" when the name is shared.
+        public static string RepoDisplayName(string slug) => NameIsAmbiguous(slug) ? slug : RepoNameOf(slug);
         // The RP-1 clone — still the primary build/deploy repo. Derived from ReposFolder now.
         public static string LocalRepoPath => RepoPath(RepoSlug);
 

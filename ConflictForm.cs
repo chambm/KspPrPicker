@@ -18,7 +18,7 @@ namespace KspPrPicker
         public ConflictForm(Pipeline.ConflictContext ctx)
         {
             _ctx = ctx;
-            Text = $"Merge conflict — PR #{ctx.Failing.Number}";
+            Text = $"Merge conflict — {ctx.Failing.Label}";
             Width = 700;
             Height = 560;
             StartPosition = FormStartPosition.CenterParent;
@@ -32,7 +32,7 @@ namespace KspPrPicker
             var header = new Label
             {
                 Left = pad, Top = y, Width = Width - 2 * pad - 16, Height = 40,
-                Text = $"PR #{ctx.Failing.Number} ({ctx.Failing.HeadRef}) could not be merged cleanly.\n{ctx.Failing.Title}",
+                Text = $"{ctx.Failing.Label} ({ctx.Failing.HeadRef}) could not be merged cleanly.\n{ctx.Failing.Title}",
                 Font = new Font(Font, FontStyle.Bold),
             };
             Controls.Add(header);
@@ -69,7 +69,7 @@ namespace KspPrPicker
             _rbSkip = new RadioButton
             {
                 Left = pad, Top = y, Width = Width - 2 * pad - 16, Height = 24,
-                Text = $"Skip PR #{ctx.Failing.Number} (keep the build as-is, drop this PR)",
+                Text = $"Skip {ctx.Failing.Label} (keep the build as-is, drop this one)",
             };
             Controls.Add(_rbSkip);
             y += _rbSkip.Height + 2;
@@ -77,7 +77,7 @@ namespace KspPrPicker
             _rbDrop = new RadioButton
             {
                 Left = pad, Top = y, Width = Width - 2 * pad - 16, Height = 24,
-                Text = $"Keep PR #{ctx.Failing.Number} and drop the earlier PR(s) it conflicts with:",
+                Text = $"Keep {ctx.Failing.Label} and drop the earlier item(s) it conflicts with:",
             };
             Controls.Add(_rbDrop);
             y += _rbDrop.Height + 2;
@@ -114,9 +114,9 @@ namespace KspPrPicker
         {
             if (_rbResolve.Checked) return new Pipeline.ConflictDecision { Choice = Pipeline.ConflictChoice.ResolveManually };
             if (_rbSkip.Checked) return new Pipeline.ConflictDecision { Choice = Pipeline.ConflictChoice.Skip };
-            var drops = new List<int>();
+            var drops = new List<string>();
             foreach (var item in _dropList.CheckedItems)
-                if (item is PrItem pi) drops.Add(pi.Pr.Number);
+                if (item is PrItem pi) drops.Add(pi.Pr.Uid);
             if (drops.Count == 0)
             {
                 MessageBox.Show(this, "Pick at least one earlier PR to drop, or choose Skip.", "Conflict", MessageBoxButtons.OK, MessageBoxIcon.Warning);

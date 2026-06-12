@@ -8,13 +8,22 @@ namespace KspPrPicker
         public int Number;
         public string Title;
         public string Author;
-        public string HeadRef;     // PR branch name, e.g. "feat/foo"
+        public string HeadRef;     // PR source branch, or (for IsBranch) the branch name itself
         public string Repo;        // short repo name, e.g. "RP-1"
         public string RepoSlug;    // owner/name, e.g. "KSP-RO/RP-1"
         public string Mergeable;   // GitHub's verdict vs base: MERGEABLE | CONFLICTING | UNKNOWN
+        public bool IsBranch;      // true = a repo branch listed directly (not a pull request)
+        // Lazy-loaded PR body (Markdown). Null = never fetched; the Description tab fills it on demand
+        // via PrFetcher.FetchBody so we don't pay for every body up-front on Refresh.
+        public string Body;
 
-        // PR numbers repeat across repos, so identify a PR by repo + number.
-        public string Uid => $"{RepoSlug}#{Number}";
+        // PR numbers repeat across repos, so identify by repo + number (PR) or repo + branch name.
+        public string Uid => IsBranch ? $"{RepoSlug}@{HeadRef}" : $"{RepoSlug}#{Number}";
+        // Human label for logs/dialogs.
+        public string Label => IsBranch ? $"branch {HeadRef}" : $"PR #{Number}";
+        // Local ref the picker fetches into, and the fetch refspec to get it from origin.
+        public string LocalRef => IsBranch ? "kbr-" + HeadRef.Replace('/', '-') : $"pr-{Number}";
+        public string FetchSpec => IsBranch ? $"{HeadRef}:{LocalRef}" : $"pull/{Number}/head:{LocalRef}";
         public List<string> Files = new List<string>();
 
         // GitHub already knows this PR conflicts with master, so it'll fail the merge regardless of selection.
@@ -32,7 +41,9 @@ namespace KspPrPicker
             }
         }
 
-        public string DisplayLabel => $"#{Number,-5} [{Author,-15}] {Title}  —  {FilesSummary}";
+        public string DisplayLabel => IsBranch
+            ? $"branch {HeadRef}  —  {Title}"
+            : $"#{Number,-5} [{Author,-15}] {Title}  —  {FilesSummary}";
 
         public bool TouchesAnyOf(IEnumerable<string> paths)
         {

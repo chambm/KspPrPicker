@@ -6,38 +6,54 @@ using System.Windows.Forms;
 
 namespace KspPrPicker
 {
-    // Checklist of the org's repositories plus any custom github repos added by URL. The checked ones are
-    // the repos whose PRs we list. Custom (non-org) repos can be removed; org repos cannot.
+    // Per-repo config: "Query" lists the repo's PRs, "Branches" also lists its branches. The org's repos
+    // plus any custom github repos added by URL. Custom (non-org) repos can be removed; org repos cannot.
     internal sealed class SelectRepositoriesForm : Form
     {
-        readonly CheckedListBox _list = new CheckedListBox();
+        readonly DataGridView _grid = new DataGridView();
         readonly HashSet<string> _orgRepos;
         readonly Button _remove = new Button();
 
-        public List<string> SelectedSlugs =>
-            _list.CheckedItems.Cast<object>().Select(o => o.ToString()).ToList();
+        public List<string> SelectedSlugs => RowsWhere("Query");
+        public List<string> BranchSlugs => RowsWhere("Branches");
 
-        public SelectRepositoriesForm(List<string> allRepos, IEnumerable<string> preChecked)
+        public SelectRepositoriesForm(List<string> allRepos, IEnumerable<string> preChecked, IEnumerable<string> preBranches)
         {
             Text = $"Select repositories — {AppConfig.RepoOrg}";
-            Width = 560;
+            Width = 620;
             Height = 600;
             StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(420, 400);
+            MinimumSize = new Size(460, 400);
 
             _orgRepos = new HashSet<string>(allRepos, StringComparer.OrdinalIgnoreCase);
-            var checkedSet = new HashSet<string>(preChecked, StringComparer.OrdinalIgnoreCase);
+            var query = new HashSet<string>(preChecked, StringComparer.OrdinalIgnoreCase);
+            var branches = new HashSet<string>(preBranches, StringComparer.OrdinalIgnoreCase);
 
-            _list.Dock = DockStyle.Fill;
-            _list.CheckOnClick = true;
-            _list.IntegralHeight = false;
+            _grid.Dock = DockStyle.Fill;
+            _grid.AutoGenerateColumns = false;
+            _grid.AllowUserToAddRows = false;
+            _grid.AllowUserToDeleteRows = false;
+            _grid.AllowUserToResizeRows = false;
+            _grid.RowHeadersVisible = false;
+            _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            _grid.MultiSelect = false;
+            _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Query", HeaderText = "Query", Width = 55 });
+            _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Branches", HeaderText = "Branches", Width = 70 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Repo", HeaderText = "Repository", ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+
+            // Org repos, then any remembered custom repos that aren't in the org list.
             foreach (var slug in allRepos)
-                _list.Items.Add(slug, checkedSet.Contains(slug));
-            // Remembered custom repos that aren't in the org list — keep them checked and removable.
-            foreach (var slug in checkedSet)
-                if (!_orgRepos.Contains(slug))
-                    _list.Items.Add(slug, true);
-            _list.SelectedIndexChanged += (s, e) => UpdateRemoveEnabled();
+                AddRow(slug, query.Contains(slug), branches.Contains(slug));
+            foreach (var slug in query.Union(branches).Where(s => !_orgRepos.Contains(s)))
+                AddRow(slug, query.Contains(slug), branches.Contains(slug));
+
+            // Commit checkbox toggles immediately.
+            _grid.CurrentCellDirtyStateChanged += (s, e) =>
+            {
+                if (_grid.IsCurrentCellDirty && _grid.CurrentCell is DataGridViewCheckBoxCell)
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
+            _grid.SelectionChanged += (s, e) => UpdateRemoveEnabled();
 
             var buttons = new Panel { Dock = DockStyle.Bottom, Height = 44 };
             var all = new Button { Text = "All", Width = 50, Top = 8, Left = 8 };
@@ -46,11 +62,10 @@ namespace KspPrPicker
             _remove.Text = "Remove"; _remove.Width = 70; _remove.Top = 8; _remove.Left = 205; _remove.Enabled = false;
             var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Width = 90, Top = 8 };
             var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 90, Top = 8 };
-            all.Click += (s, e) => SetAll(true);
-            none.Click += (s, e) => SetAll(false);
+            all.Click += (s, e) => SetAllQuery(true);
+            none.Click += (s, e) => SetAllQuery(false);
             add.Click += (s, e) => AddCustom();
             _remove.Click += (s, e) => RemoveSelected();
-            // Position OK/Cancel against the panel's real width (default 200 until docked/laid out).
             buttons.Layout += (s, e) =>
             {
                 cancel.Left = buttons.ClientSize.Width - cancel.Width - 8;
@@ -58,16 +73,36 @@ namespace KspPrPicker
             };
             buttons.Controls.AddRange(new Control[] { all, none, add, _remove, ok, cancel });
 
-            Controls.Add(_list);
+            Controls.Add(_grid);
             Controls.Add(buttons);
             AcceptButton = ok;
             CancelButton = cancel;
         }
 
+        void AddRow(string slug, bool query, bool branches)
+        {
+            int i = _grid.Rows.Add(query, branches, slug);
+            if (!_orgRepos.Contains(slug)) _grid.Rows[i].DefaultCellStyle.ForeColor = Color.MediumBlue;   // custom
+        }
+
+        List<string> RowsWhere(string column)
+        {
+            var result = new List<string>();
+            foreach (DataGridViewRow row in _grid.Rows)
+                if (row.Cells[column].Value is bool b && b)
+                    result.Add((string)row.Cells["Repo"].Value);
+            return result;
+        }
+
+        void SetAllQuery(bool value)
+        {
+            foreach (DataGridViewRow row in _grid.Rows) row.Cells["Query"].Value = value;
+        }
+
         void UpdateRemoveEnabled()
         {
-            // Remove is only for custom (non-org) repos.
-            _remove.Enabled = _list.SelectedItem is string slug && !_orgRepos.Contains(slug);
+            _remove.Enabled = _grid.CurrentRow != null
+                && _grid.CurrentRow.Cells["Repo"].Value is string slug && !_orgRepos.Contains(slug);
         }
 
         void AddCustom()
@@ -82,27 +117,22 @@ namespace KspPrPicker
                 return;
             }
             int existing = IndexOfSlug(slug);
-            if (existing >= 0) { _list.SetItemChecked(existing, true); _list.SelectedIndex = existing; return; }
-            int idx = _list.Items.Add(slug, true);
-            _list.SelectedIndex = idx;
+            if (existing >= 0) { _grid.Rows[existing].Cells["Query"].Value = true; _grid.CurrentCell = _grid.Rows[existing].Cells["Repo"]; return; }
+            AddRow(slug, true, false);
+            _grid.CurrentCell = _grid.Rows[_grid.Rows.Count - 1].Cells["Repo"];
         }
 
         void RemoveSelected()
         {
-            if (_list.SelectedItem is string slug && !_orgRepos.Contains(slug))
-                _list.Items.Remove(slug);
+            if (_grid.CurrentRow != null && _grid.CurrentRow.Cells["Repo"].Value is string slug && !_orgRepos.Contains(slug))
+                _grid.Rows.Remove(_grid.CurrentRow);
         }
 
         int IndexOfSlug(string slug)
         {
-            for (int i = 0; i < _list.Items.Count; i++)
-                if (string.Equals(_list.Items[i].ToString(), slug, StringComparison.OrdinalIgnoreCase)) return i;
+            for (int i = 0; i < _grid.Rows.Count; i++)
+                if (string.Equals((string)_grid.Rows[i].Cells["Repo"].Value, slug, StringComparison.OrdinalIgnoreCase)) return i;
             return -1;
-        }
-
-        void SetAll(bool value)
-        {
-            for (int i = 0; i < _list.Items.Count; i++) _list.SetItemChecked(i, value);
         }
 
         // Normalises a github URL (or owner/name) to an "owner/name" slug.
